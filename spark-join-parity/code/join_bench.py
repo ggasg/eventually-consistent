@@ -1,7 +1,7 @@
 from pyspark.sql import SparkSession
 
-RUNS = 10
-WARMUP = 2
+RUNS = 50
+WARMUP = 20
 
 spark = (
     SparkSession.builder

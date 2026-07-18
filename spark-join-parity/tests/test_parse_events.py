@@ -96,7 +96,49 @@ def test_peak_memory_is_max_not_sum_across_tasks():
     assert r1["peak_execution_memory_max_mb"] == 2.0
 
 
+def test_welch_t_test_detects_a_real_separation():
+    # two clearly separated samples, no overlap: should read as significant
+    pyspark_vals = [100, 102, 98, 101, 99, 100, 103, 97, 101, 99]
+    scala_vals = [130, 128, 132, 129, 131, 127, 133, 130, 129, 131]
+
+    result = pe.welch_t_test(pyspark_vals, scala_vals)
+
+    assert result["p_value"] is not None
+    assert result["p_value"] < 0.01
+    assert result["mean_diff"] > 25  # scala - pyspark, matches Delta's sign
+    lo, hi = result["ci_95"]
+    assert lo > 0  # 0 is not inside the CI when the effect is real
+
+
+def test_welch_t_test_does_not_flag_overlapping_noise():
+    # same generating process, run-to-run jitter only: should not read as significant
+    pyspark_vals = [700, 950, 780, 820, 690, 910, 760, 840, 700, 950]
+    scala_vals = [740, 900, 800, 830, 720, 880, 790, 810, 760, 920]
+
+    result = pe.welch_t_test(pyspark_vals, scala_vals)
+
+    assert result["p_value"] is not None
+    lo, hi = result["ci_95"]
+    assert lo < 0 < hi  # 0 falls inside the CI -> can't reject "no difference"
+
+
+def test_welch_t_test_handles_zero_variance_metrics():
+    # peak memory / shuffle I/O are identical across every run in practice
+    pyspark_vals = [96.0] * 10
+    scala_vals = [96.0] * 10
+
+    result = pe.welch_t_test(pyspark_vals, scala_vals)
+
+    assert result["p_value"] is None
+    assert result["t_stat"] is None
+    assert result["mean_diff"] == 0.0
+    assert "zero variance" in result["note"]
+
+
 if __name__ == "__main__":
     test_parse_log_aggregates_correctly()
     test_peak_memory_is_max_not_sum_across_tasks()
+    test_welch_t_test_detects_a_real_separation()
+    test_welch_t_test_does_not_flag_overlapping_noise()
+    test_welch_t_test_handles_zero_variance_metrics()
     print("All tests passed.")

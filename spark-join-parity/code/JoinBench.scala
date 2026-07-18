@@ -3,8 +3,8 @@ import org.apache.spark.sql.SparkSession
 case class Event(id: Long, ts: Long, amount: Double, category: String)
 case class Account(id: Long, region: String, tier: Int, signup_epoch: Long)
 
-val RUNS = 10
-val WARMUP = 2
+val RUNS = 50
+val WARMUP = 20
 
 import spark.implicits._
 

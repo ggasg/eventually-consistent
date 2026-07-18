@@ -16,7 +16,7 @@ anything else from this repo.
 
 | Article | Folder | Published |
 |---|---|---|
-| One Join, Two APIs, Zero Difference: Scala Datasets vs PySpark DataFrames on the JVM | [`spark-join-parity/`](./spark-join-parity) | [ggasg.github.io/blog/one-join-two-apis-zero-difference](https://ggasg.github.io/blog/one-join-two-apis-zero-difference/) |
+| One Join, Two APIs, Same Plan: Scala Datasets vs PySpark DataFrames on the JVM | [`spark-join-parity/`](./spark-join-parity) | [ggasg.github.io/blog/one-join-two-apis-same-plan](https://ggasg.github.io/blog/one-join-two-apis-same-plan/) |
 
 ## Adding a new article
 

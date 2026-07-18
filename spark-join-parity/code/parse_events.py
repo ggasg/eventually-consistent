@@ -1,9 +1,19 @@
 import json
-import sys
+import math
 import statistics as st
+import sys
 from collections import defaultdict
 
+from scipy import stats as sstats
+
+
 def parse_log(path):
+    """Parses a Spark JSON event log. Tolerates a truncated final line:
+    an event log file still open when the driver process is killed ends
+    mid-write, and that partial line isn't a parsing bug to fix, it's
+    what an interrupted log looks like. The run it belongs to gets
+    dropped downstream in summarize() for lacking a matching job-end
+    event, not silently kept with a fabricated value."""
     job_group = {}
     job_times = defaultdict(list)
     stage_to_job = {}
@@ -12,11 +22,16 @@ def parse_log(path):
     with open(path) as f:
         lines = f.readlines()
 
+    skipped = 0
     for line in lines:
         line = line.strip()
         if not line:
             continue
-        ev = json.loads(line)
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            skipped += 1
+            continue
         etype = ev.get("Event")
 
         if etype == "SparkListenerJobStart":
@@ -113,43 +128,145 @@ def parse_log(path):
             "memory_spill_mb": mem_spill / (1024 * 1024),
             "disk_spill_mb": disk_spill / (1024 * 1024),
         }
+    if skipped:
+        print(f"[parse_log] skipped {skipped} malformed line(s) in {path}", file=sys.stderr)
     return results
 
 
+METRICS = [
+    "duration_ms",
+    "jvm_gc_time_ms",
+    "executor_cpu_time_ms",
+    "peak_execution_memory_max_mb",
+    "shuffle_total_mb",
+    "memory_spill_mb",
+]
+
+
 def summarize(label, path):
+    """Returns (stat_summary, raw) where raw[metric] is the list of
+    per-run values, in run order, so a reader can rerun their own test
+    against the same numbers instead of trusting our p-value."""
     results = parse_log(path)
     runs = {k: v for k, v in results.items() if k.startswith("run_")}
+    ordered_tags = sorted(runs, key=lambda x: int(x.split("_")[1]))
+
+    # A run missing its job-end event (driver killed mid-run, log still
+    # ".inprogress") has partial task metrics across the board, not just
+    # a missing duration, so the whole run is dropped rather than mixing
+    # a truncated task count into the other metrics.
+    incomplete = [t for t in ordered_tags if runs[t]["duration_ms"] is None]
+    if incomplete:
+        print(f"[{label}] dropping incomplete run(s), no matching job-end event: {incomplete}",
+              file=sys.stderr)
+        ordered_tags = [t for t in ordered_tags if t not in incomplete]
+
     print(f"\n=== {label} ===")
-    for tag in sorted(runs, key=lambda x: int(x.split("_")[1])):
+    for tag in ordered_tags:
         r = runs[tag]
         print(f"{tag}: dur={r['duration_ms']}ms gc={r['jvm_gc_time_ms']}ms "
               f"cpu={r['executor_cpu_time_ms']:.0f}ms peakMemMax={r['peak_execution_memory_max_mb']:.1f}MB "
               f"shuffle={r['shuffle_total_mb']:.1f}MB tasks={r['n_tasks']} "
               f"memSpill={r['memory_spill_mb']:.1f}MB")
 
-    metrics = ["duration_ms", "jvm_gc_time_ms", "executor_cpu_time_ms",
-               "peak_execution_memory_max_mb", "shuffle_total_mb", "memory_spill_mb"]
-    avg = {}
-    for m in metrics:
-        vals = [runs[t][m] for t in runs if runs[t][m] is not None]
-        avg[m] = st.mean(vals) if vals else None
-    print(f"AVERAGE ({len(runs)} runs): " + ", ".join(f"{m}={avg[m]:.2f}" for m in metrics))
-    return avg
+    raw = {}
+    stat_summary = {}
+    for m in METRICS:
+        vals = [runs[t][m] for t in ordered_tags if runs[t][m] is not None]
+        raw[m] = vals
+        stat_summary[m] = {
+            "mean": st.mean(vals) if vals else None,
+            "stdev": st.stdev(vals) if len(vals) > 1 else 0.0,
+            "min": min(vals) if vals else None,
+            "max": max(vals) if vals else None,
+        }
+    print(f"AVERAGE ({len(ordered_tags)} runs): " +
+          ", ".join(f"{m}={stat_summary[m]['mean']:.2f}" for m in METRICS))
+    return stat_summary, raw
+
+
+def welch_t_test(pyspark_vals, scala_vals):
+    """Welch's two-sample t-test (unequal variances assumed) plus a 95%
+    CI on the mean difference, scala - pyspark, matching the Delta
+    column's sign convention. Falls back to a plain equality check when
+    a metric has zero variance in both samples (peak memory and shuffle
+    I/O are identical across every run, so a t-test is undefined there,
+    not merely non-significant)."""
+    a, b = list(pyspark_vals), list(scala_vals)
+    n_a, n_b = len(a), len(b)
+    var_a = st.variance(a) if n_a > 1 else 0.0
+    var_b = st.variance(b) if n_b > 1 else 0.0
+    mean_diff = st.mean(b) - st.mean(a)
+
+    if var_a == 0.0 and var_b == 0.0:
+        return {
+            "mean_diff": mean_diff,
+            "t_stat": None,
+            "p_value": None,
+            "df": None,
+            "ci_95": [mean_diff, mean_diff],
+            "note": "zero variance in both samples; identical every run, not just on average",
+        }
+
+    t_stat, p_value = sstats.ttest_ind(b, a, equal_var=False)
+    se = math.sqrt(var_a / n_a + var_b / n_b)
+    df = (var_a / n_a + var_b / n_b) ** 2 / (
+        (var_a / n_a) ** 2 / (n_a - 1) + (var_b / n_b) ** 2 / (n_b - 1)
+    )
+    t_crit = sstats.t.ppf(0.975, df)
+    ci_95 = [mean_diff - t_crit * se, mean_diff + t_crit * se]
+    return {
+        "mean_diff": float(mean_diff),
+        "t_stat": float(t_stat),
+        "p_value": float(p_value),
+        "df": float(df),
+        "ci_95": [float(ci_95[0]), float(ci_95[1])],
+    }
 
 
 if __name__ == "__main__":
+    import argparse
     import glob
-    pyspark_file = glob.glob("/tmp/bench/events/pyspark/*")[0]
-    scala_file = glob.glob("/tmp/bench/events/scala/*")[0]
 
-    avg_py = summarize("PySpark DataFrame join", pyspark_file)
-    avg_sc = summarize("Scala Dataset joinWith", scala_file)
+    # --events-dir / --out-prefix exist so a single benchmark session (one
+    # events dir, one pair of event log files) can be parsed into its own
+    # named results file without clobbering another session's output.
+    # That's what let three separate sessions in this repo's history
+    # (see results/session_*.json) get compared side by side instead of
+    # each overwriting the last.
+    argp = argparse.ArgumentParser()
+    argp.add_argument("--events-dir", default="/tmp/bench/events",
+                       help="directory containing pyspark/ and scala/ event log subdirs")
+    argp.add_argument("--out-prefix", default="summary",
+                       help="results/<prefix>.json and results/<prefix>_raw.json")
+    args = argp.parse_args()
 
-    print("\n=== DELTA (Scala - PySpark) ===")
-    for m in avg_py:
-        d = avg_sc[m] - avg_py[m]
-        pct = (d / avg_py[m] * 100) if avg_py[m] else float("nan")
-        print(f"{m}: scala={avg_sc[m]:.2f} pyspark={avg_py[m]:.2f} delta={d:.2f} ({pct:+.1f}%)")
+    pyspark_file = glob.glob(f"{args.events_dir}/pyspark/*")[0]
+    scala_file = glob.glob(f"{args.events_dir}/scala/*")[0]
 
-    with open("/tmp/bench/results/summary.json", "w") as f:
-        json.dump({"pyspark": avg_py, "scala": avg_sc}, f, indent=2)
+    stat_py, raw_py = summarize("PySpark DataFrame join", pyspark_file)
+    stat_sc, raw_sc = summarize("Scala Dataset joinWith", scala_file)
+
+    print("\n=== WELCH'S T-TEST (Scala - PySpark), 95% CI on the mean difference ===")
+    tests = {}
+    for m in METRICS:
+        result = welch_t_test(raw_py[m], raw_sc[m])
+        tests[m] = result
+        if result.get("p_value") is None:
+            print(f"{m}: {result['note']} (mean_diff={result['mean_diff']:.4f})")
+        else:
+            lo, hi = result["ci_95"]
+            print(f"{m}: mean_diff={result['mean_diff']:.4f} t={result['t_stat']:.3f} "
+                  f"df={result['df']:.1f} p={result['p_value']:.4f} 95%CI=({lo:.4f}, {hi:.4f})")
+
+    with open(f"/tmp/bench/results/{args.out_prefix}.json", "w") as f:
+        json.dump({
+            "pyspark": stat_py,
+            "scala": stat_sc,
+            "delta_scala_minus_pyspark": tests,
+            "n_runs_pyspark": len(next(iter(raw_py.values()))),
+            "n_runs_scala": len(next(iter(raw_sc.values()))),
+        }, f, indent=2)
+
+    with open(f"/tmp/bench/results/{args.out_prefix}_raw.json", "w") as f:
+        json.dump({"pyspark": raw_py, "scala": raw_sc}, f, indent=2)

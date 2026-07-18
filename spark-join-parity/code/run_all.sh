@@ -14,10 +14,10 @@ mkdir -p "$DATA_DIR/data" "$DATA_DIR/events/pyspark" "$DATA_DIR/events/scala" "$
 echo "== 1/4 generating data =="
 python3 code/gen_data.py
 
-echo "== 2/4 running PySpark DataFrame join (10 runs + 2 warmup) =="
+echo "== 2/4 running PySpark DataFrame join (50 runs + 20 warmup) =="
 python3 code/join_bench.py
 
-echo "== 3/4 running Scala Dataset joinWith (10 runs + 2 warmup) =="
+echo "== 3/4 running Scala Dataset joinWith (50 runs + 20 warmup) =="
 "$SPARK_HOME/bin/spark-shell" \
   --master "local[4]" \
   --conf spark.driver.host=127.0.0.1 \
