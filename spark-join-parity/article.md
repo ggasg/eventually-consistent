@@ -6,9 +6,9 @@ Ask around and you'll hear it as settled fact: Scala beats PySpark, and a Scala 
 
 A Spark join, whether triggered from `df.join(...)` in PySpark or `ds.joinWith(...)` in Scala, doesn't run as Python or Scala at execution time. Both go through the same path: your call builds a logical plan, Catalyst optimizes it, and the result is a physical plan made of operators (`Exchange`, `Sort`, `SortMergeJoin`, `Project`, and so on) that get compiled to JVM bytecode via whole-stage code generation. Python only re-enters the picture if you attach a Python UDF or pull rows back into the driver as Python objects. A plain DataFrame join does neither.
 
-The Dataset API adds one more variable worth being precise about. `Dataset[T].joinWith` is typed: it returns `Dataset[(A, B)]` instead of a `DataFrame`, using Spark's encoders to describe `A` and `B`. The encoder step exists to convert between the JVM's internal `UnsafeRow` format and your case class when you actually touch the typed objects (via `.map`, `.collect`, `.foreach`, etc.). If you don't touch them, and instead go straight to `.count()`, Catalyst doesn't materialize any case class instances at all. That distinction is the whole reason this is worth measuring rather than assuming.
+The Dataset API adds one more wrinkle worth being precise about. `Dataset[T].joinWith` is typed: it returns `Dataset[(A, B)]` instead of a `DataFrame`, using Spark's encoders to describe `A` and `B`. The encoder step exists to convert between the JVM's internal `UnsafeRow` format and your case class when you actually touch the typed objects (via `.map`, `.collect`, `.foreach`, etc.). If you don't touch them, and instead go straight to `.count()`, Catalyst doesn't materialize any case class instances at all. Which is why this is worth measuring instead of assuming.
 
-So the real question isn't "Scala vs Python." It's: does using the typed `Dataset.joinWith` API instead of the untyped `DataFrame.join` API change what the join operator itself does on the JVM, in terms of memory, CPU, and shuffle I/O?
+This isn't a Scala-versus-Python comparison. It's narrower: does the typed `Dataset.joinWith` API change what the join operator does on the JVM, in memory, CPU, and shuffle I/O, compared to the untyped `DataFrame.join`?
 
 ### Setup
 
@@ -58,7 +58,7 @@ No `DeserializeToObject` node shows up on the Scala side. Because the query neve
 
 ### How the numbers were collected
 
-Rather than timing with a stopwatch, each run is tagged with `sc.setJobGroup(...)` before the action, and Spark's own event log (`spark.eventLog.enabled=true`) is parsed afterward to pull `SparkListenerTaskEnd` metrics for every task belonging to that job group: JVM GC time, executor CPU time, peak execution memory, and shuffle read/write bytes, exactly the numbers Spark itself uses internally, not an approximation of them. Each engine ran 2 warmup iterations (discarded, to let the JIT settle) followed by 10 measured iterations in the same JVM/session. The parser and its aggregation logic are in `code/parse_events.py`, with a unit test in `tests/test_parse_events.py` against a small synthetic event log.
+Each run is tagged with `sc.setJobGroup(...)` before the action, and Spark's own event log (`spark.eventLog.enabled=true`) is parsed afterward for `SparkListenerTaskEnd` metrics on every task in that job group: JVM GC time, executor CPU time, peak execution memory, shuffle read/write bytes. These are the numbers Spark records internally, not a stopwatch estimate of them. Each engine ran 2 warmup iterations (discarded, to let the JIT settle) followed by 10 measured iterations in the same JVM/session. The parser and its aggregation logic are in `code/parse_events.py`, with a unit test in `tests/test_parse_events.py` against a small synthetic event log.
 
 ### Results (mean ± stdev over 10 runs)
 
@@ -70,7 +70,7 @@ Rather than timing with a stopwatch, each run is tagged with `sc.setJobGroup(...
 | Peak execution memory | 96.00 MB ± 0.0 | 96.00 MB ± 0.0 | 0.0% |
 | Shuffle read + write | 100.87 MB ± 0.0 | 100.87 MB ± 0.0 | 0.0% |
 
-Peak execution memory and shuffle I/O are identical to the byte, across every one of the 20 measured runs, not just close. That's expected: both are determined entirely by the plan and the partitioning, which are the same plan. CPU time is within 1%, well inside run-to-run noise. GC time is within its own stdev band in both directions. Wall-clock duration shows an 8% gap in favor of PySpark, but the two stdev bands overlap heavily (PySpark's own run-to-run spread is 55ms, larger than the 64ms gap between the means), so this reads as scheduling noise on a shared 4-core sandbox rather than a property of either API. If anything, it's a reminder that end-to-end wall time is a noisy proxy for what an operator actually costs, which is the reason this piece looked at GC time, CPU time, memory, and shuffle I/O directly instead of stopping at "which one finished first."
+Peak execution memory and shuffle I/O are identical to the byte, across every one of the 20 measured runs, not just close. That's expected: both are determined entirely by the plan and the partitioning, which are the same plan. CPU time is within 1%, well inside run-to-run noise. GC time is within its own stdev band in both directions. Wall-clock duration shows an 8% gap in favor of PySpark, but the two stdev bands overlap heavily (PySpark's own run-to-run spread is 55ms, larger than the 64ms gap between the means), so this reads as scheduling noise on a shared 4-core sandbox rather than a property of either API. Wall time alone is a noisy proxy for what an operator costs. That's why this piece measured GC time, CPU time, memory, and shuffle I/O directly, instead of stopping at which one finished first.
 
 ### Where this stops being true
 
@@ -80,7 +80,7 @@ A Python UDF inside the join's projection forces row-by-row serialization across
 
 ### Takeaway
 
-For the specific, common case of a DataFrame-style join with no UDFs, "Scala is faster" isn't something this data supports at the operator level. The join runs as the same compiled plan doing the same JVM work regardless of which API built it. The language choice matters for what happens around the join, not inside it.
+For a plain DataFrame-style join with no UDFs, this data doesn't support "Scala is faster" at the operator level. The join runs as the same compiled plan doing the same JVM work regardless of which API built it. The language choice matters for what happens around the join, not inside it.
 
 All code, the raw event logs' parsed summary, and the physical plan output are in this repo under `code/` and `results/`. Corrections, replications on real hardware, or a follow-up run that adds a UDF or a `.map` step are welcome.
 
