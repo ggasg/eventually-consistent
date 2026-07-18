@@ -3,8 +3,11 @@ import org.apache.spark.sql.SparkSession
 case class Event(id: Long, ts: Long, amount: Double, category: String)
 case class Account(id: Long, region: String, tier: Int, signup_epoch: Long)
 
-val RUNS = 50
-val WARMUP = 20
+// Overridable via env vars so the same script can run with a shorter
+// schedule as one half of a concurrent pair (see run_concurrent.sh),
+// without duplicating this file.
+val RUNS = sys.env.getOrElse("BENCH_RUNS", "50").toInt
+val WARMUP = sys.env.getOrElse("BENCH_WARMUP", "20").toInt
 
 import spark.implicits._
 

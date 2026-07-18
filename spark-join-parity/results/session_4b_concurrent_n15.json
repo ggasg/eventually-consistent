@@ -1,0 +1,222 @@
+{
+  "pyspark": {
+    "duration_ms": {
+      "mean": 1805.0666666666666,
+      "stdev": 140.4978223861071,
+      "min": 1668,
+      "max": 2241
+    },
+    "jvm_gc_time_ms": {
+      "mean": 171.26666666666668,
+      "stdev": 39.150746511158026,
+      "min": 123,
+      "max": 263
+    },
+    "executor_cpu_time_ms": {
+      "mean": 2027.3650778666668,
+      "stdev": 22.604547743755866,
+      "min": 1984.60915,
+      "max": 2074.770007
+    },
+    "peak_execution_memory_max_mb": {
+      "mean": 95.99993896484375,
+      "stdev": 0.0,
+      "min": 95.99993896484375,
+      "max": 95.99993896484375
+    },
+    "shuffle_total_mb": {
+      "mean": 100.86168098449707,
+      "stdev": 0.0,
+      "min": 100.86168098449707,
+      "max": 100.86168098449707
+    },
+    "memory_spill_mb": {
+      "mean": 0.0,
+      "stdev": 0.0,
+      "min": 0.0,
+      "max": 0.0
+    }
+  },
+  "scala": {
+    "duration_ms": {
+      "mean": 1704.9285714285713,
+      "stdev": 151.50194935822,
+      "min": 1219,
+      "max": 1823
+    },
+    "jvm_gc_time_ms": {
+      "mean": 149.5,
+      "stdev": 27.405080943840716,
+      "min": 78,
+      "max": 182
+    },
+    "executor_cpu_time_ms": {
+      "mean": 2109.0254314285717,
+      "stdev": 39.868010037303605,
+      "min": 1978.700043,
+      "max": 2140.639277
+    },
+    "peak_execution_memory_max_mb": {
+      "mean": 95.99993896484375,
+      "stdev": 0.0,
+      "min": 95.99993896484375,
+      "max": 95.99993896484375
+    },
+    "shuffle_total_mb": {
+      "mean": 100.86168098449707,
+      "stdev": 0.0,
+      "min": 100.86168098449707,
+      "max": 100.86168098449707
+    },
+    "memory_spill_mb": {
+      "mean": 0.0,
+      "stdev": 0.0,
+      "min": 0.0,
+      "max": 0.0
+    }
+  },
+  "delta_scala_minus_pyspark": {
+    "duration_ms": {
+      "mean_diff": -100.13809523809527,
+      "t_stat": -1.8419865442118453,
+      "p_value": 0.07672421780182874,
+      "df": 26.43193499026755,
+      "ci_95": [
+        -211.79646660523568,
+        11.52027612904513
+      ]
+    },
+    "jvm_gc_time_ms": {
+      "mean_diff": -21.76666666666668,
+      "t_stat": -1.7436728124624892,
+      "p_value": 0.09345106734321221,
+      "df": 25.106286187691623,
+      "ci_95": [
+        -47.47083992771722,
+        3.9375065943838656
+      ]
+    },
+    "executor_cpu_time_ms": {
+      "mean_diff": 81.66035356190491,
+      "t_stat": 6.72159498880132,
+      "p_value": 1.4298009958656482e-06,
+      "df": 20.276376636914687,
+      "ci_95": [
+        56.340204151779396,
+        106.98050297203042
+      ]
+    },
+    "peak_execution_memory_max_mb": {
+      "mean_diff": 0.0,
+      "t_stat": null,
+      "p_value": null,
+      "df": null,
+      "ci_95": [
+        0.0,
+        0.0
+      ],
+      "note": "zero variance in both samples; identical every run, not just on average"
+    },
+    "shuffle_total_mb": {
+      "mean_diff": 0.0,
+      "t_stat": null,
+      "p_value": null,
+      "df": null,
+      "ci_95": [
+        0.0,
+        0.0
+      ],
+      "note": "zero variance in both samples; identical every run, not just on average"
+    },
+    "memory_spill_mb": {
+      "mean_diff": 0.0,
+      "t_stat": null,
+      "p_value": null,
+      "df": null,
+      "ci_95": [
+        0.0,
+        0.0
+      ],
+      "note": "zero variance in both samples; identical every run, not just on average"
+    }
+  },
+  "n_runs_pyspark": 15,
+  "n_runs_scala": 14,
+  "paired_delta_scala_minus_pyspark": {
+    "duration_ms": {
+      "mean_diff": -89.71428571428571,
+      "t_stat": -1.2021322405294865,
+      "p_value": 0.2507528378681365,
+      "df": 13,
+      "ci_95": [
+        -250.94108286645547,
+        71.51251143788404
+      ],
+      "n_pairs": 14,
+      "mean_pair_gap_ms": 2084.5
+    },
+    "jvm_gc_time_ms": {
+      "mean_diff": -18.642857142857142,
+      "t_stat": -1.287065205048366,
+      "p_value": 0.22051664966666143,
+      "df": 13,
+      "ci_95": [
+        -49.9353231968947,
+        12.649608911180415
+      ],
+      "n_pairs": 14,
+      "mean_pair_gap_ms": 2084.5
+    },
+    "executor_cpu_time_ms": {
+      "mean_diff": 82.78485614285718,
+      "t_stat": 5.370069726617272,
+      "p_value": 0.0001275203699439594,
+      "df": 13,
+      "ci_95": [
+        49.480668758809635,
+        116.08904352690473
+      ],
+      "n_pairs": 14,
+      "mean_pair_gap_ms": 2084.5
+    },
+    "peak_execution_memory_max_mb": {
+      "mean_diff": 0.0,
+      "t_stat": null,
+      "p_value": null,
+      "df": null,
+      "ci_95": [
+        0.0,
+        0.0
+      ],
+      "n_pairs": 14,
+      "note": "zero variance in the paired differences",
+      "mean_pair_gap_ms": 2084.5
+    },
+    "shuffle_total_mb": {
+      "mean_diff": 0.0,
+      "t_stat": null,
+      "p_value": null,
+      "df": null,
+      "ci_95": [
+        0.0,
+        0.0
+      ],
+      "n_pairs": 14,
+      "note": "zero variance in the paired differences",
+      "mean_pair_gap_ms": 2084.5
+    },
+    "memory_spill_mb": {
+      "mean_diff": 0.0,
+      "t_stat": null,
+      "p_value": null,
+      "df": null,
+      "ci_95": [
+        0.0,
+        0.0
+      ],
+      "n_pairs": 14,
+      "note": "zero variance in the paired differences",
+      "mean_pair_gap_ms": 2084.5
+    }
+  }
+}

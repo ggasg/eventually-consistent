@@ -135,10 +135,76 @@ def test_welch_t_test_handles_zero_variance_metrics():
     assert "zero variance" in result["note"]
 
 
+def test_pair_by_time_matches_nearest_timestamps():
+    py_times = [1000, 2000, 3000]
+    py_vals = [10, 20, 30]
+    sc_times = [1050, 1950, 3100]
+    sc_vals = [100, 200, 300]
+
+    pairs = pe.pair_by_time(py_times, py_vals, sc_times, sc_vals)
+
+    assert len(pairs) == 3
+    assert (10, 100, 50) in pairs
+    assert (20, 200, 50) in pairs
+    assert (30, 300, 100) in pairs
+
+
+def test_pair_by_time_handles_unequal_lengths():
+    # concurrent sessions rarely finish the exact same number of runs;
+    # pairing should use up the shorter list and stop, not crash
+    py_times = [1000, 2000, 3000, 4000]
+    py_vals = [1, 2, 3, 4]
+    sc_times = [1100, 3050]
+    sc_vals = [10, 30]
+
+    pairs = pe.pair_by_time(py_times, py_vals, sc_times, sc_vals)
+
+    assert len(pairs) == 2
+    matched_py_vals = sorted(p for p, _, _ in pairs)
+    assert matched_py_vals == [1, 3]  # closest to 1100 and 3050 respectively
+
+
+def test_paired_t_test_detects_a_consistent_offset():
+    # every pair has scala ~5 higher than pyspark, small jitter
+    pairs = [(100, 105, 10), (98, 104, 20), (101, 106, 15), (99, 103, 5), (100, 106, 12)]
+
+    result = pe.paired_t_test(pairs)
+
+    assert result["p_value"] is not None
+    assert result["p_value"] < 0.01
+    assert result["mean_diff"] > 0
+    lo, hi = result["ci_95"]
+    assert lo > 0  # 0 not in the CI, the offset is consistent across pairs
+
+
+def test_paired_t_test_does_not_flag_noise_around_zero():
+    # pair differences straddle zero with no consistent direction
+    pairs = [(100, 106, 5), (105, 99, 8), (98, 102, 3), (103, 97, 6), (100, 101, 4)]
+
+    result = pe.paired_t_test(pairs)
+
+    assert result["p_value"] is not None
+    lo, hi = result["ci_95"]
+    assert lo < 0 < hi
+
+
+def test_paired_t_test_requires_at_least_two_pairs():
+    result = pe.paired_t_test([(100, 105, 10)])
+
+    assert result["p_value"] is None
+    assert result["n_pairs"] == 1
+    assert "fewer than 2 pairs" in result["note"]
+
+
 if __name__ == "__main__":
     test_parse_log_aggregates_correctly()
     test_peak_memory_is_max_not_sum_across_tasks()
     test_welch_t_test_detects_a_real_separation()
     test_welch_t_test_does_not_flag_overlapping_noise()
     test_welch_t_test_handles_zero_variance_metrics()
+    test_pair_by_time_matches_nearest_timestamps()
+    test_pair_by_time_handles_unequal_lengths()
+    test_paired_t_test_detects_a_consistent_offset()
+    test_paired_t_test_does_not_flag_noise_around_zero()
+    test_paired_t_test_requires_at_least_two_pairs()
     print("All tests passed.")

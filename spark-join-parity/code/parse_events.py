@@ -1,5 +1,6 @@
 import json
 import math
+import os
 import statistics as st
 import sys
 from collections import defaultdict
@@ -117,6 +118,7 @@ def parse_log(path):
         results[group] = {
             "n_tasks": n_tasks,
             "duration_ms": duration_ms,
+            "start_epoch_ms": span[0],
             "jvm_gc_time_ms": gc_time,
             "executor_run_time_ms": exec_run_time,
             "executor_cpu_time_ms": exec_cpu_time_ns / 1e6,
@@ -180,6 +182,11 @@ def summarize(label, path):
             "min": min(vals) if vals else None,
             "max": max(vals) if vals else None,
         }
+    # Not a metric to test, a coordinate: the wall-clock moment each run
+    # started, so pair_by_time() can match this engine's runs against
+    # the other engine's by "which ones were actually happening at the
+    # same time", instead of by matching list position.
+    raw["start_epoch_ms"] = [runs[t]["start_epoch_ms"] for t in ordered_tags]
     print(f"AVERAGE ({len(ordered_tags)} runs): " +
           ", ".join(f"{m}={stat_summary[m]['mean']:.2f}" for m in METRICS))
     return stat_summary, raw
@@ -224,6 +231,76 @@ def welch_t_test(pyspark_vals, scala_vals):
     }
 
 
+def pair_by_time(py_times, py_vals, sc_times, sc_vals):
+    """Greedy nearest-neighbor pairing by start_epoch_ms: every possible
+    (pyspark run, scala run) gap is computed, then pairs are assigned
+    smallest-gap-first, skipping either side once it's already matched.
+    That's what makes it "nearest neighbor" rather than just "closest
+    available at the time we happened to get to it": processing runs in
+    chronological order instead can burn a good match on an early run
+    and leave a later run stuck with a worse one, even though a smaller
+    total-gap assignment existed. Sound only when both engines actually
+    ran concurrently or in tightly alternating succession; pairing two
+    runs that happened hours apart in separate sessions would just be
+    an unpaired comparison wearing a paired-test costume. Returns the
+    list of (pyspark_val, scala_val, time_gap_ms) triples matched."""
+    candidates = []
+    for i in range(len(py_times)):
+        for j in range(len(sc_times)):
+            candidates.append((abs(py_times[i] - sc_times[j]), i, j))
+    candidates.sort(key=lambda c: c[0])
+
+    used_py, used_sc = set(), set()
+    pairs = []
+    for gap, i, j in candidates:
+        if i in used_py or j in used_sc:
+            continue
+        used_py.add(i)
+        used_sc.add(j)
+        pairs.append((py_vals[i], sc_vals[j], gap))
+    return pairs
+
+
+def paired_t_test(pairs):
+    """One-sample t-test on (scala - pyspark) differences from pairs
+    produced by pair_by_time(). This is the test that actually controls
+    for shared, time-varying ambient noise: each pair shares an
+    approximate moment in wall-clock time, so noise common to both
+    engines at that moment cancels out in the difference, instead of
+    inflating the variance of an unpaired comparison the way
+    welch_t_test does when the two samples come from different time
+    windows."""
+    diffs = [sc - py for py, sc, _gap in pairs]
+    n = len(diffs)
+    mean_diff = st.mean(diffs) if diffs else None
+
+    if n < 2:
+        return {"mean_diff": mean_diff, "t_stat": None, "p_value": None,
+                "df": None, "ci_95": None, "n_pairs": n,
+                "note": "fewer than 2 pairs, cannot compute a t-test"}
+
+    sd = st.stdev(diffs)
+    if sd == 0.0:
+        return {"mean_diff": mean_diff, "t_stat": None, "p_value": None,
+                "df": None, "ci_95": [mean_diff, mean_diff], "n_pairs": n,
+                "note": "zero variance in the paired differences"}
+
+    se = sd / math.sqrt(n)
+    df = n - 1
+    t_stat = mean_diff / se
+    p_value = float(2 * sstats.t.sf(abs(t_stat), df))
+    t_crit = sstats.t.ppf(0.975, df)
+    ci_95 = [mean_diff - t_crit * se, mean_diff + t_crit * se]
+    return {
+        "mean_diff": float(mean_diff),
+        "t_stat": float(t_stat),
+        "p_value": p_value,
+        "df": df,
+        "ci_95": [float(ci_95[0]), float(ci_95[1])],
+        "n_pairs": n,
+    }
+
+
 if __name__ == "__main__":
     import argparse
     import glob
@@ -238,7 +315,12 @@ if __name__ == "__main__":
     argp.add_argument("--events-dir", default="/tmp/bench/events",
                        help="directory containing pyspark/ and scala/ event log subdirs")
     argp.add_argument("--out-prefix", default="summary",
-                       help="results/<prefix>.json and results/<prefix>_raw.json")
+                       help="<results-dir>/<prefix>.json and <prefix>_raw.json")
+    argp.add_argument("--results-dir", default="/tmp/bench/results",
+                       help="where to write <prefix>.json / <prefix>_raw.json")
+    argp.add_argument("--paired", action="store_true",
+                       help="also run pair_by_time + paired_t_test; only sound if both "
+                            "engines actually ran concurrently or tightly alternating")
     args = argp.parse_args()
 
     pyspark_file = glob.glob(f"{args.events_dir}/pyspark/*")[0]
@@ -247,7 +329,7 @@ if __name__ == "__main__":
     stat_py, raw_py = summarize("PySpark DataFrame join", pyspark_file)
     stat_sc, raw_sc = summarize("Scala Dataset joinWith", scala_file)
 
-    print("\n=== WELCH'S T-TEST (Scala - PySpark), 95% CI on the mean difference ===")
+    print("\n=== WELCH'S T-TEST (Scala - PySpark), unpaired, 95% CI on the mean difference ===")
     tests = {}
     for m in METRICS:
         result = welch_t_test(raw_py[m], raw_sc[m])
@@ -259,14 +341,38 @@ if __name__ == "__main__":
             print(f"{m}: mean_diff={result['mean_diff']:.4f} t={result['t_stat']:.3f} "
                   f"df={result['df']:.1f} p={result['p_value']:.4f} 95%CI=({lo:.4f}, {hi:.4f})")
 
-    with open(f"/tmp/bench/results/{args.out_prefix}.json", "w") as f:
-        json.dump({
-            "pyspark": stat_py,
-            "scala": stat_sc,
-            "delta_scala_minus_pyspark": tests,
-            "n_runs_pyspark": len(next(iter(raw_py.values()))),
-            "n_runs_scala": len(next(iter(raw_sc.values()))),
-        }, f, indent=2)
+    paired_tests = None
+    if args.paired:
+        print("\n=== PAIRED T-TEST (Scala - PySpark), matched by wall-clock timestamp ===")
+        paired_tests = {}
+        for m in METRICS:
+            pairs = pair_by_time(raw_py["start_epoch_ms"], raw_py[m],
+                                  raw_sc["start_epoch_ms"], raw_sc[m])
+            result = paired_t_test(pairs)
+            gaps = [g for _, _, g in pairs]
+            result["mean_pair_gap_ms"] = (st.mean(gaps) if gaps else None)
+            paired_tests[m] = result
+            if result.get("p_value") is None:
+                print(f"{m}: {result.get('note')} (mean_diff={result['mean_diff']}, n_pairs={result['n_pairs']})")
+            else:
+                lo, hi = result["ci_95"]
+                print(f"{m}: mean_diff={result['mean_diff']:.4f} t={result['t_stat']:.3f} "
+                      f"df={result['df']} p={result['p_value']:.4f} 95%CI=({lo:.4f}, {hi:.4f}) "
+                      f"n_pairs={result['n_pairs']} avg_gap={result['mean_pair_gap_ms']:.0f}ms")
 
-    with open(f"/tmp/bench/results/{args.out_prefix}_raw.json", "w") as f:
+    out = {
+        "pyspark": stat_py,
+        "scala": stat_sc,
+        "delta_scala_minus_pyspark": tests,
+        "n_runs_pyspark": len(raw_py["duration_ms"]),
+        "n_runs_scala": len(raw_sc["duration_ms"]),
+    }
+    if paired_tests is not None:
+        out["paired_delta_scala_minus_pyspark"] = paired_tests
+
+    os.makedirs(args.results_dir, exist_ok=True)
+    with open(f"{args.results_dir}/{args.out_prefix}.json", "w") as f:
+        json.dump(out, f, indent=2)
+
+    with open(f"{args.results_dir}/{args.out_prefix}_raw.json", "w") as f:
         json.dump({"pyspark": raw_py, "scala": raw_sc}, f, indent=2)
