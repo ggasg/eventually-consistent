@@ -1,0 +1,80 @@
+{
+  "pyspark": {
+    "duration_ms": {
+      "mean": 789.5,
+      "stdev": 55.915114235777075,
+      "min": 737,
+      "max": 915
+    },
+    "jvm_gc_time_ms": {
+      "mean": 84.8,
+      "stdev": 17.29354407478891,
+      "min": 66,
+      "max": 117
+    },
+    "executor_cpu_time_ms": {
+      "mean": 1997.7292412,
+      "stdev": 24.0620202489993,
+      "min": 1958.606489,
+      "max": 2039.429242
+    },
+    "peak_execution_memory_max_mb": {
+      "mean": 95.99996948242188,
+      "stdev": 0.0,
+      "min": 95.99996948242188,
+      "max": 95.99996948242188
+    },
+    "shuffle_total_mb": {
+      "mean": 100.86800193786621,
+      "stdev": 0.0,
+      "min": 100.86800193786621,
+      "max": 100.86800193786621
+    },
+    "memory_spill_mb": {
+      "mean": 0.0,
+      "stdev": 0.0,
+      "min": 0.0,
+      "max": 0.0
+    }
+  },
+  "scala": {
+    "duration_ms": {
+      "mean": 853.5,
+      "stdev": 32.41484570720987,
+      "min": 803,
+      "max": 899
+    },
+    "jvm_gc_time_ms": {
+      "mean": 82,
+      "stdev": 11.450376024878446,
+      "min": 66,
+      "max": 104
+    },
+    "executor_cpu_time_ms": {
+      "mean": 2015.5348908,
+      "stdev": 21.977902617455594,
+      "min": 1989.731758,
+      "max": 2065.000749
+    },
+    "peak_execution_memory_max_mb": {
+      "mean": 95.99996948242188,
+      "stdev": 0.0,
+      "min": 95.99996948242188,
+      "max": 95.99996948242188
+    },
+    "shuffle_total_mb": {
+      "mean": 100.86800193786621,
+      "stdev": 0.0,
+      "min": 100.86800193786621,
+      "max": 100.86800193786621
+    },
+    "memory_spill_mb": {
+      "mean": 0.0,
+      "stdev": 0.0,
+      "min": 0.0,
+      "max": 0.0
+    }
+  },
+  "n_runs_pyspark": 10,
+  "n_runs_scala": 10
+}

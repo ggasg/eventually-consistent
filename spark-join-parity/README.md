@@ -1,0 +1,50 @@
+# One Join, Two APIs, Zero Difference
+
+Companion code for the article of the same name: a controlled, reproducible
+measurement of whether a Scala `Dataset.joinWith` and a PySpark
+`DataFrame.join` differ in JVM resource consumption for the same
+`SortMergeJoin`.
+
+Published post: *(link here once it's live)*
+
+## Layout
+
+```
+article.md               the write-up
+code/
+  gen_data.py             generates the two synthetic Parquet tables
+  join_bench.py           PySpark DataFrame join, 2 warmup + 10 measured runs
+  JoinBench.scala         Scala Dataset joinWith, 2 warmup + 10 measured runs
+  parse_events.py         parses Spark event logs into per-run metrics
+  run_all.sh              runs the full pipeline end to end
+results/
+  summary.json            mean/stdev/min/max per metric, both engines
+  physical_plan.txt        explain("formatted") output for both jobs
+tests/
+  test_parse_events.py    unit test for the event log parser
+```
+
+## Reproducing
+
+Requires a JDK (11+) and Python 3.9+.
+
+```bash
+pip install pyspark==3.5.1   # brings spark-shell and spark-submit with it
+cd code
+./run_all.sh
+```
+
+This writes synthetic data, runs both jobs locally with Spark event logging
+turned on, parses the resulting event logs, and writes `results/summary.json`.
+Total runtime is a couple of minutes on a 4-core machine.
+
+## Running the tests
+
+```bash
+python3 tests/test_parse_events.py
+```
+
+## Feedback
+
+Corrections, replications on real hardware, or a follow-up run that adds a
+UDF or a `.map`/`.rdd` step are welcome — open an issue or a PR.
