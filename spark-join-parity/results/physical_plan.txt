@@ -1,4 +1,4 @@
-== Physical Plan (identical for both engines) ==
+== Physical Plan ==
 * Project (12)
 +- * SortMergeJoin Inner (11)
    :- * Sort (5)
@@ -11,10 +11,3 @@
          +- * Filter (8)
             +- * ColumnarToRow (7)
                +- Scan parquet  (6)
-
-Confirmed on:
-- events.join(accounts, on="id", how="inner")           [PySpark DataFrame]
-- events.joinWith(accounts, events("id") === accounts("id"), "inner")  [Scala Dataset]
-
-Both compile to the same node types under Catalyst with
-spark.sql.autoBroadcastJoinThreshold=-1 and spark.sql.adaptive.enabled=false.

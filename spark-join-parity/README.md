@@ -1,16 +1,14 @@
 # One Join, Two APIs, Zero Difference
 
-Companion code for the article of the same name: a controlled, reproducible
+Companion code for [the article of the same name](https://ggasg.github.io/blog/one-join-two-apis-zero-difference/): a controlled, reproducible
 measurement of whether a Scala `Dataset.joinWith` and a PySpark
 `DataFrame.join` differ in JVM resource consumption for the same
-`SortMergeJoin`.
-
-Published post: *(link here once it's live)*
+`SortMergeJoin`. The write-up lives on the blog; this repo is just the code,
+tests, and raw results behind it.
 
 ## Layout
 
 ```
-article.md               the write-up
 code/
   gen_data.py             generates the two synthetic Parquet tables
   join_bench.py           PySpark DataFrame join, 2 warmup + 10 measured runs
@@ -47,4 +45,4 @@ python3 tests/test_parse_events.py
 ## Feedback
 
 Corrections, replications on real hardware, or a follow-up run that adds a
-UDF or a `.map`/`.rdd` step are welcome — open an issue or a PR.
+UDF or a `.map`/`.rdd` step are welcome. Open an issue or a PR.
