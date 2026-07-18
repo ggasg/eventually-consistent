@@ -13,6 +13,8 @@ code/
   gen_data.py             generates the two synthetic Parquet tables
   join_bench.py           PySpark DataFrame join, 2 warmup + 10 measured runs
   JoinBench.scala         Scala Dataset joinWith, 2 warmup + 10 measured runs
+  explain_plan.py         prints the PySpark physical plan (explain("formatted"))
+  explain_plan.scala      prints the Scala physical plan (explain("formatted"))
   parse_events.py         parses Spark event logs into per-run metrics
   run_all.sh              runs the full pipeline end to end
 results/
@@ -35,6 +37,13 @@ cd code
 This writes synthetic data, runs both jobs locally with Spark event logging
 turned on, parses the resulting event logs, and writes `results/summary.json`.
 Total runtime is a couple of minutes on a 4-core machine.
+
+`explain_plan.py` / `explain_plan.scala` aren't part of that pipeline, they're
+a separate one-off check: same data, same configs, but just calling
+`explain("formatted")` instead of running the timed loop, to confirm both
+engines produce the identical physical plan. Run with `python3
+code/explain_plan.py` and `spark-shell -i code/explain_plan.scala` (same
+`--conf` flags as in `run_all.sh`) after the data exists.
 
 ## Running the tests
 
