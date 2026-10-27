@@ -1,0 +1,13 @@
+# Helm values for the Spark Operator (kubeflow/spark-operator chart 2.5.2).
+spark:
+  # The operator only runs SparkApplications in this namespace.
+  jobNamespaces:
+  - spark-jobs
+  # The namespace, the driver's service account and its permissions come from spark-jobs.yml.
+  serviceAccount:
+    create: false
+  rbac:
+    create: false
+# Not needed: node placement and volumes are set through sparkConf in each job.
+webhook:
+  enable: false

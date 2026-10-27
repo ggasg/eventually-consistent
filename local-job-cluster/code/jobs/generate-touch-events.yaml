@@ -1,0 +1,69 @@
+# Writes the touch_events Delta table. Argument: number of events.
+# Run from local-job-cluster/: kubectl replace --force -f code/jobs/generate-touch-events.yaml
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: generate-touch-events
+  namespace: spark-jobs
+spec:
+  type: Python
+  pythonVersion: "3"
+  mode: cluster
+  sparkVersion: 4.1.3
+  image: spark-with-delta:4.1.3
+  imagePullPolicy: Never
+  mainApplicationFile: local:///opt/app/touch_events/generate.py
+  arguments: ["1000000"]
+
+  # Driver and worker sizes
+  driver:
+    cores: 1
+    memory: 1g
+    serviceAccount: spark
+  executor:
+    cores: 2
+    memory: 1g
+
+  # Autoscaling: executors are added while tasks wait and removed after 60s idle.
+  dynamicAllocation:
+    enabled: true
+    minExecutors: 1
+    maxExecutors: 4
+    # On by default; it would keep executors that hold shuffle data from being removed.
+    shuffleTrackingEnabled: false
+
+  sparkConf:
+    # Before leaving, an executor hands its shuffle data to the others (decommissioning).
+    spark.decommission.enabled: "true"
+    spark.storage.decommission.enabled: "true"
+
+    # Drivers on the driver node, executors on the worker nodes
+    spark.kubernetes.driver.node.selector.spark-node: driver
+    spark.kubernetes.executor.node.selector.spark-node: worker
+
+    # Job code: code/app/ (mounted into the kind nodes at /opt/app)
+    spark.kubernetes.driver.volumes.hostPath.code.mount.path: /opt/app
+    spark.kubernetes.driver.volumes.hostPath.code.mount.readOnly: "true"
+    spark.kubernetes.driver.volumes.hostPath.code.options.path: /opt/app
+    spark.kubernetes.executor.volumes.hostPath.code.mount.path: /opt/app
+    spark.kubernetes.executor.volumes.hostPath.code.mount.readOnly: "true"
+    spark.kubernetes.executor.volumes.hostPath.code.options.path: /opt/app
+    spark.kubernetes.driverEnv.PYTHONPATH: /opt/app
+    spark.executorEnv.PYTHONPATH: /opt/app
+
+    # Event logs for the History Server: spark-events/ (mounted into the driver node)
+    spark.eventLog.enabled: "true"
+    spark.eventLog.dir: file:///spark-events
+    spark.kubernetes.driver.volumes.hostPath.events.mount.path: /spark-events
+    spark.kubernetes.driver.volumes.hostPath.events.options.path: /spark-events
+
+    # Delta Lake
+    spark.sql.extensions: io.delta.sql.DeltaSparkSessionExtension
+    spark.sql.catalog.spark_catalog: org.apache.spark.sql.delta.catalog.DeltaCatalog
+
+    # MinIO on the laptop, reached from pods through Docker Desktop (see README)
+    spark.hadoop.fs.s3a.endpoint: http://host.docker.internal:9000
+    spark.hadoop.fs.s3a.access.key: minioadmin
+    spark.hadoop.fs.s3a.secret.key: minioadmin
+    spark.hadoop.fs.s3a.path.style.access: "true"
+    spark.hadoop.fs.s3a.connection.ssl.enabled: "false"
